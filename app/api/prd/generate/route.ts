@@ -74,9 +74,14 @@ export async function POST(request: Request) {
     return NextResponse.json(result.document, { status: 200, headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     if (error instanceof PRDConfigurationError) return errorResponse('MISSING_API_KEY', 'PRD generation is not configured on the server.', 503)
-    if (error instanceof PRDValidationError) return errorResponse('MALFORMED_OUTPUT', 'Gemini returned a PRD that did not match the required schema or evidence map.', 502)
+    if (error instanceof PRDValidationError) return errorResponse('MALFORMED_OUTPUT', `Gemini returned a PRD that did not match the required schema or evidence map. ${error.message}`, 502)
     if (error instanceof PRDUpstreamError) {
-      return errorResponse('UPSTREAM_FAILURE', 'The PRD model could not complete the request. Try again shortly.', 502)
+      if (error.status === 400 || error.status === 401 || error.status === 403) {
+        return errorResponse('UPSTREAM_FAILURE', `Gemini rejected the configured request. Check that GEMINI_API_KEY is a valid Gemini API key and GEMINI_MODEL is supported.${error.providerMessage ? ` Provider: ${error.providerMessage}` : ''}`, 502)
+      }
+      if (error.status === 404) return errorResponse('UPSTREAM_FAILURE', 'Gemini could not find the configured model. Set GEMINI_MODEL to a model enabled for your API project (for example, gemini-2.5-flash).', 502)
+      if (error.status === 429) return errorResponse('UPSTREAM_FAILURE', 'Gemini quota or rate limits were reached. Try again later or check the API project quota.', 429)
+      return errorResponse('UPSTREAM_FAILURE', `The PRD model could not complete the request${error.status ? ` (HTTP ${error.status})` : ''}.${error.providerMessage ? ` Provider: ${error.providerMessage}` : ' Try again shortly.'}`, error.status === 429 ? 429 : 502)
     }
     return errorResponse('UPSTREAM_FAILURE', 'The PRD could not be generated. Try again shortly.', 502)
   }

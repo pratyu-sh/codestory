@@ -5,13 +5,15 @@ import { normalizePrdDocument, normalizePrdSection, PRDValidationError } from '.
 import type { PRDDocument, PRDGenerationResult, PRDSection, PRDSectionId } from './types'
 
 export const GEMINI_API_ROOT = 'https://generativelanguage.googleapis.com/v1beta/models'
-export const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash'
+export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
+export const GEMINI_MODEL_FALLBACK = 'gemini-2.5-flash'
 
 export type FetchImpl = typeof fetch
 
 export class PRDUpstreamError extends Error {
   readonly status?: number
-  constructor(message: string, status?: number) { super(message); this.name = 'PRDUpstreamError'; this.status = status }
+  readonly providerMessage?: string
+  constructor(message: string, status?: number, providerMessage?: string) { super(message); this.name = 'PRDUpstreamError'; this.status = status; this.providerMessage = providerMessage }
 }
 
 export class PRDConfigurationError extends Error {
@@ -102,21 +104,30 @@ export async function generatePrd(
   const allowedEvidenceIds = new Set(buildEvidenceMap(project).entries.map(entry => entry.id))
   const existingDocument = options.document ? normalizePrdDocument(options.document, allowedEvidenceIds) : undefined
   const prompt = buildPrdPrompt({ project, ...options, document: existingDocument })
-  const url = `${GEMINI_API_ROOT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
+  const requestBody = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', responseSchema: options.sectionId ? sectionResponseSchema : documentResponseSchema },
+  }
+  const requestModel = (name: string) => fetchImpl(`${GEMINI_API_ROOT}/${encodeURIComponent(name)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  })
   let response: Response
   try {
-    response = await fetchImpl(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: options.sectionId ? sectionResponseSchema : documentResponseSchema },
-      }),
-    })
+    response = await requestModel(model)
+    if (response.status === 404 && model !== GEMINI_MODEL_FALLBACK) response = await requestModel(GEMINI_MODEL_FALLBACK)
   } catch {
     throw new PRDUpstreamError('Gemini could not be reached.')
   }
-  if (!response.ok) throw new PRDUpstreamError('Gemini rejected the generation request.', response.status)
+  if (!response.ok) {
+    let providerMessage: string | undefined
+    try {
+      const errorPayload = await response.clone().json() as { error?: { message?: unknown } }
+      if (typeof errorPayload.error?.message === 'string') providerMessage = errorPayload.error.message.slice(0, 400)
+    } catch { /* keep the provider response private and use the status-specific message */ }
+    throw new PRDUpstreamError('Gemini rejected the generation request.', response.status, providerMessage)
+  }
   let payload: GeminiResponse
   try { payload = await response.json() as GeminiResponse } catch { throw new PRDUpstreamError('Gemini returned an unreadable response.', response.status) }
   const raw = extractJson(payload)

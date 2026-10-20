@@ -37,6 +37,40 @@ function unique(values: string[], label: string): string[] {
   return values
 }
 
+function token(value: unknown): unknown {
+  return typeof value === 'string' ? value.trim().toLowerCase().replace(/[_\s]+/g, '-') : value
+}
+
+function requirementStatus(value: unknown): unknown {
+  const normalized = token(value)
+  if (normalized === 'implemented' || normalized === 'complete' || normalized === 'verified') return 'supported'
+  if (normalized === 'planned' || normalized === 'recommendation' || normalized === 'future') return 'proposed'
+  if (normalized === 'inferred' || normalized === 'partial' || normalized === 'likely') return 'uncertain'
+  return normalized
+}
+
+function sectionStatus(value: unknown): unknown {
+  const normalized = token(value)
+  if (normalized === 'supported' || normalized === 'implemented' || normalized === 'verified') return 'complete'
+  if (normalized === 'inferred' || normalized === 'likely') return 'uncertain'
+  return normalized
+}
+
+function documentStatus(value: unknown): unknown {
+  const normalized = token(value)
+  if (normalized === 'in-review' || normalized === 'review' || normalized === 'inreview') return 'in-review'
+  return normalized
+}
+
+function priority(value: unknown): unknown {
+  const normalized = token(value)
+  if (normalized === 'p0' || normalized === 'critical' || normalized === 'high') return 'must'
+  if (normalized === 'p1' || normalized === 'medium-high') return 'should'
+  if (normalized === 'p2' || normalized === 'medium' || normalized === 'low') return 'could'
+  if (normalized === 'p3' || normalized === 'nice-to-have' || normalized === 'nice') return 'unknown'
+  return normalized
+}
+
 function normalizeReference(value: unknown, index: number): PRDReference {
   const item = record(value, `references[${index}]`)
   const result: PRDReference = {
@@ -65,8 +99,8 @@ function normalizeRequirement(value: unknown, index: number, evidenceIds: Set<st
     businessRules: stringArray(item.businessRules, `requirements[${index}].businessRules`, 20),
     errorConditions: stringArray(item.errorConditions, `requirements[${index}].errorConditions`, 20),
     relatedDependencies: stringArray(item.relatedDependencies, `requirements[${index}].relatedDependencies`, 20),
-    status: enumValue(item.status, requirementStatuses, `requirements[${index}].status`),
-    priority: enumValue(item.priority, priorities, `requirements[${index}].priority`),
+    status: enumValue(item.status === undefined ? 'unknown' : requirementStatus(item.status), requirementStatuses, `requirements[${index}].status`),
+    priority: enumValue(item.priority === undefined ? 'unknown' : priority(item.priority), priorities, `requirements[${index}].priority`),
     acceptanceCriteria: stringArray(item.acceptanceCriteria, `requirements[${index}].acceptanceCriteria`, 30),
     evidenceIds: ids,
     rationale: string(item.rationale, `requirements[${index}].rationale`, 2_000),
@@ -100,7 +134,7 @@ export function normalizePrdSection(value: unknown, expectedId?: PRDSectionId, e
   return {
     id,
     title: string(item.title, 'section.title', 300),
-    status: enumValue(item.status, sectionStatuses, 'section.status'),
+    status: enumValue(sectionStatus(item.status), sectionStatuses, 'section.status'),
     summary: string(item.summary, 'section.summary', 3_000),
     content: stringArray(item.content, 'section.content', 100),
     requirements,
@@ -126,7 +160,7 @@ export function normalizePrdDocument(value: unknown, allowedEvidenceIds?: Set<st
     schemaVersion: '1.0',
     title: string(item.title, 'document.title', 500),
     projectName: string(item.projectName, 'document.projectName', 300),
-    status: enumValue<PRDDocumentStatus>(item.status, documentStatuses, 'document.status'),
+    status: enumValue<PRDDocumentStatus>(documentStatus(item.status), documentStatuses, 'document.status'),
     version: {
       number: version.number,
       label: string(version.label, 'document.version.label', 100),
