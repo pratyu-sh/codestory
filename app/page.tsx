@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectModel, InterviewSeed } from '../lib/analysis/types'
 import { RepositoryGraph } from './components/RepositoryGraph'
 
@@ -8,12 +8,36 @@ type Artifact = 'Overview' | 'Flowchart' | 'System Design' | 'PRD' | 'Interview 
 type ExportFormat = 'pdf' | 'docx' | 'pptx'
 type ChatMessage = { role: 'user' | 'assistant'; text: string }
 const artifacts: Artifact[] = ['Overview', 'Flowchart', 'System Design', 'PRD', 'Interview Questions']
+const WORKSPACE_STORAGE_KEY = 'codeatlas:workspace:v1'
 const emptyChats = (): Record<Artifact, ChatMessage[]> => ({
   Overview: [], Flowchart: [], 'System Design': [], PRD: [], 'Interview Questions': [],
 })
 const emptyDrafts = (): Record<Artifact, string> => ({
   Overview: '', Flowchart: '', 'System Design': '', PRD: '', 'Interview Questions': '',
 })
+
+function isProjectModel(value: unknown): value is ProjectModel {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  const project = record.project
+  const flow = record.flow
+  const systemDesign = record.systemDesign
+  const analysis = record.analysis
+  return Boolean(
+    project && typeof project === 'object' && typeof (project as Record<string, unknown>).name === 'string'
+      && Array.isArray(record.files)
+      && Array.isArray(record.technologies)
+      && Array.isArray(record.evidence)
+      && flow && typeof flow === 'object' && Array.isArray((flow as Record<string, unknown>).steps)
+      && Array.isArray((flow as Record<string, unknown>).edges)
+      && systemDesign && typeof systemDesign === 'object'
+      && Array.isArray((systemDesign as Record<string, unknown>).nodes)
+      && Array.isArray((systemDesign as Record<string, unknown>).edges)
+      && Array.isArray(record.interviewSeeds)
+      && analysis && typeof analysis === 'object'
+      && typeof (analysis as Record<string, unknown>).analyzedAt === 'string',
+  )
+}
 
 function followUps(seeds: InterviewSeed[], version: number): InterviewSeed[] {
   if (!version) return seeds
@@ -89,6 +113,7 @@ function ExportMenu({ disabled, onExport }: { disabled: boolean; onExport: (form
 }
 
 export default function Home() {
+  const [showLanding, setShowLanding] = useState(true)
   const [activeArtifact, setActiveArtifact] = useState<Artifact>('Overview')
   const [repo, setRepo] = useState('')
   const [project, setProject] = useState<ProjectModel | null>(null)
@@ -105,9 +130,59 @@ export default function Home() {
   const [chatOpen, setChatOpen] = useState(false)
   const [conversations, setConversations] = useState(emptyChats)
   const [drafts, setDrafts] = useState(emptyDrafts)
+  const [storageReady, setStorageReady] = useState(false)
+  const howRef = useRef<HTMLElement>(null)
   const questions = useMemo(() => followUps(project?.interviewSeeds || [], questionVersion), [project, questionVersion])
   const projectName = project?.project.name || 'No repository imported'
   const busy = analyzing || exporting
+  const isCanvasArtifact = activeArtifact === 'Flowchart' || activeArtifact === 'System Design'
+
+  function openWorkspace() {
+    setActiveArtifact('Overview')
+    setShowLanding(false)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  function returnHome() {
+    setShowLanding(true)
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  function scrollToHowItWorks() {
+    howRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+      if (raw) {
+        const saved = JSON.parse(raw) as { repo?: unknown; project?: unknown; summary?: unknown }
+        if (isProjectModel(saved.project)) {
+          setProject(saved.project)
+          setRepo(typeof saved.repo === 'string' ? saved.repo : '')
+          setSummary(typeof saved.summary === 'string' ? saved.summary : '')
+          setAnalysisStatus('Restored the previous repository analysis.')
+        }
+      }
+    } catch {
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+    } finally {
+      setStorageReady(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!storageReady) return
+    if (!project) {
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      return
+    }
+    try {
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ repo, project, summary }))
+    } catch {
+      // A full localStorage quota should not prevent the analyzed workspace from being used.
+    }
+  }, [project, repo, summary, storageReady])
 
   async function analyzeRepository() {
     if (busy || controller.current) return
@@ -202,13 +277,84 @@ export default function Home() {
     }
   }
 
+  if (showLanding) {
+    return (
+      <main className="landing-page">
+        <nav className="landing-nav" aria-label="Main navigation">
+          <button className="landing-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="CodeAtlas home">
+            <span className="landing-brand-mark" aria-hidden="true">✦</span>
+            <span>CodeAtlas</span>
+          </button>
+          <div className="landing-nav-links">
+            <button onClick={scrollToHowItWorks}>How it works</button>
+            <a href="#principles">Principles</a>
+          </div>
+          <button className="landing-nav-cta" onClick={openWorkspace}>Open workspace <span aria-hidden="true">↗</span></button>
+        </nav>
+
+        <section className="landing-hero" aria-labelledby="landing-title">
+          <div className="landing-hero-copy">
+            <p className="landing-kicker"><span className="kicker-line" aria-hidden="true" /> Codebase intelligence / 01</p>
+            <h1 id="landing-title">Understand your codebase.<br /><em>Explain it with confidence.</em></h1>
+            <p className="landing-lede">CodeAtlas turns an unfamiliar repository into a clear, evidence-backed map of how it works — so every technical conversation starts from the same source of truth.</p>
+            <div className="landing-actions">
+              <button className="landing-primary" onClick={openWorkspace}>Try for free <span aria-hidden="true">↗</span></button>
+              <button className="landing-secondary" onClick={scrollToHowItWorks} aria-controls="how-it-works">See how <span aria-hidden="true">↓</span></button>
+            </div>
+            <p className="landing-note"><span aria-hidden="true">◆</span> Public GitHub repositories · Static analysis · No setup</p>
+          </div>
+
+          <div className="landing-preview" aria-label="CodeAtlas workspace preview">
+            <div className="preview-topline"><span>CODEATLAS / WORKSPACE</span><span>ANALYSIS READY</span></div>
+            <div className="preview-title"><span>Repository map</span><b>acme / storefront</b></div>
+            <div className="preview-canvas">
+              <div className="preview-grid" aria-hidden="true" />
+              <div className="preview-edge edge-a" aria-hidden="true" />
+              <div className="preview-edge edge-b" aria-hidden="true" />
+              <div className="preview-edge edge-c" aria-hidden="true" />
+              <div className="preview-node preview-node-a"><span>01</span><b>Web client</b><small>app / routes</small></div>
+              <div className="preview-node preview-node-b"><span>02</span><b>API layer</b><small>server / handlers</small></div>
+              <div className="preview-node preview-node-c"><span>03</span><b>Data store</b><small>lib / database</small></div>
+              <div className="preview-node preview-node-d"><span>04</span><b>Auth service</b><small>middleware / auth</small></div>
+              <div className="preview-cursor" aria-hidden="true">✦</div>
+            </div>
+            <div className="preview-footer"><span><i className="status-pip" /> 48 files inspected</span><span>Traceable evidence <b>↗</b></span></div>
+          </div>
+        </section>
+
+        <section className="landing-metrics" aria-label="CodeAtlas highlights">
+          <div className="metric-intro"><p className="landing-kicker">A clearer starting point</p><p>Less guessing. More signal. Built for the first day in a new codebase and every day after.</p></div>
+          <div className="metric-card"><strong>01</strong><b>Map the system</b><span>See structure, technologies, and relationships in one considered view.</span></div>
+          <div className="metric-card"><strong>02</strong><b>Follow the evidence</b><span>Every insight stays close to the source files that support it.</span></div>
+          <div className="metric-card metric-card-dark"><strong>03</strong><b>Speak with clarity</b><span>Turn repository context into confident technical decisions.</span></div>
+        </section>
+
+        <section className="how-section" id="how-it-works" ref={howRef} aria-labelledby="how-title">
+          <div className="how-heading"><p className="landing-kicker">How it works / 02</p><h2 id="how-title">From repository<br /><em>to shared understanding.</em></h2></div>
+          <div className="how-steps">
+            <article><span>01</span><h3>Bring a repository</h3><p>Paste a public GitHub URL. CodeAtlas reads the shape of the project without executing its code.</p></article>
+            <article><span>02</span><h3>Explore the signal</h3><p>Move between an overview, execution flow, system design, product brief, and interview questions.</p></article>
+            <article><span>03</span><h3>Make it legible</h3><p>Ask evidence-based questions, inspect source references, and export the artifact your team needs.</p></article>
+          </div>
+        </section>
+
+        <section className="landing-principles" id="principles" aria-labelledby="principles-title">
+          <div><p className="landing-kicker">Designed for trust / 03</p><h2 id="principles-title">Useful context,<br /><em>without the black box.</em></h2></div>
+          <div className="principles-copy"><p>CodeAtlas makes the boundary between what the repository shows and what it suggests easy to see. Static evidence, explicit relationships, and local search keep your next explanation grounded.</p><button className="landing-text-link" onClick={openWorkspace}>Explore your workspace <span aria-hidden="true">→</span></button></div>
+        </section>
+
+        <footer className="landing-footer"><span className="landing-footer-brand"><span className="landing-brand-mark" aria-hidden="true">✦</span> CodeAtlas</span><span>Developer intelligence for the codebase in front of you.</span><button onClick={openWorkspace}>Try for free <span aria-hidden="true">↗</span></button></footer>
+      </main>
+    )
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
+        <button className="brand brand-link" onClick={returnHome} aria-label="Back to CodeAtlas home">
           <div className="brand-mark">✦</div>
           <div><strong>CodeAtlas</strong><span>developer intelligence</span></div>
-        </div>
+        </button>
         <div className="workspace-label">WORKSPACE</div>
         <div className="workspace-card">
           <div className="repo-avatar">{project ? projectName[0].toUpperCase() : '—'}</div>
@@ -226,7 +372,7 @@ export default function Home() {
           <div className="status">{analyzing ? 'Analyzing repository' : project ? `Analysis: ${project.analysis.status}` : 'Awaiting repository'}</div>
         </div>
       </aside>
-      <section className="main-area">
+      <section className={`main-area${isCanvasArtifact ? ' flowchart-mode' : ''}`}>
         <header className="topbar">
           <div className="crumb"><span>Workspace</span><b>/</b><strong>{projectName}</strong></div>
           <details className="top-actions">
@@ -236,7 +382,8 @@ export default function Home() {
               The local evidence assistant uses summaries and keyword matching, not AI.</p>
           </details>
         </header>
-        <div className="content">
+        <div className={`content${isCanvasArtifact ? ' canvas-artifact-content' : ''}`}>
+          {!isCanvasArtifact && <>
           <div className="hero-row">
             <div>
               <div className="eyebrow">{analyzing ? 'ANALYZING REPOSITORY' : project ? 'REPOSITORY ANALYSIS' : 'START WITH A REPOSITORY'}</div>
@@ -265,6 +412,7 @@ export default function Home() {
               {project.analysis.truncated && ' Analysis was truncated by configured limits.'}</p>
             {project.analysis.warnings.length > 0 && <ul>{project.analysis.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
           </section>}
+          </>}
           <div className="workspace-toolbar">
             <div className="tabs" aria-label="Artifact views">
               {artifacts.map(label => <button key={label}

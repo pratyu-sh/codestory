@@ -12,6 +12,11 @@ async function main() {
   assert.equal(local.analysis.codeExecution, false)
   assert.equal(local.analysis.source, 'local-filesystem')
   assert.ok(local.files.every(file => !file.path.includes('node_modules')))
+  const restored = JSON.parse(JSON.stringify(local)) as typeof local
+  assert.equal(restored.project.fullName, local.project.fullName)
+  assert.equal(restored.analysis.codeExecution, false)
+  assert.ok(Array.isArray(restored.flow.edges))
+  assert.ok(Array.isArray(restored.systemDesign.nodes))
 
   const payload = { projectName: 'smoke', title: 'overview', paragraphs: ['Evidence-backed smoke test'] }
   const pdf = await generateExport('pdf', payload)

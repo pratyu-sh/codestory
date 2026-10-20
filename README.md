@@ -9,6 +9,7 @@ CodeAtlas turns a public GitHub repository or local project into an evidence-awa
 - File filtering for dependencies, build outputs, generated files, and secret-like paths.
 - Shared project model with technologies, evidence, flow steps, system-design nodes, and interview seeds.
 - Artifact-scoped chat with source references and out-of-scope handling.
+- Locally persisted workspace restoration after a page refresh.
 - Genuine PDF, DOCX, and PPTX exports.
 - Local CLI analysis for repositories that should not be pushed to GitHub.
 
