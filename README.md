@@ -43,6 +43,8 @@ npm run build
 npm start
 ```
 
+Development output is stored in `.next-dev`, while production builds use `.next`. This keeps a running `npm run dev` server from being corrupted when a production build is run in another terminal.
+
 ## Local CLI
 
 The CLI analyzes the current directory by default and does not execute project code.
