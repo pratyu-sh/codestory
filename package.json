@@ -8,7 +8,8 @@
     "start": "next start",
     "cli": "tsx cli/codeatlas.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/smoke.ts"
+    "test": "tsx tests/smoke.ts && tsx tests/prd.ts",
+    "test:prd": "tsx tests/prd.ts"
   },
   "dependencies": {
     "docx": "^9.13.0",

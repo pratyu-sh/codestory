@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ProjectModel, InterviewSeed } from '../lib/analysis/types'
 import { RepositoryGraph } from './components/RepositoryGraph'
+import PrdWorkspace, { type PRDRevision } from './components/PrdWorkspace'
+import { normalizePrdDocument } from '../lib/prd/schema'
+import type { PRDDocument, PRDSectionId } from '../lib/prd/types'
 
 type Artifact = 'Overview' | 'Flowchart' | 'System Design' | 'PRD' | 'Interview Questions'
 type ExportFormat = 'pdf' | 'docx' | 'pptx'
@@ -61,7 +64,13 @@ function evidenceFor(project: ProjectModel, artifact: Artifact) {
   return project.evidence.filter(item => ids.has(item.id))
 }
 
-function artifactText(project: ProjectModel, artifact: Artifact, summary: string, questions: InterviewSeed[]) {
+function artifactText(project: ProjectModel, artifact: Artifact, summary: string, questions: InterviewSeed[], prdDocument: PRDDocument | null = null) {
+  if (artifact === 'PRD' && prdDocument) return prdDocument.sections.flatMap(section => [
+    `## ${section.title} · ${section.status}`,
+    section.summary,
+    ...section.content,
+    ...section.requirements.map(requirement => `${requirement.id} [${requirement.status}/${requirement.priority}]: ${requirement.text}\nAcceptance: ${requirement.acceptanceCriteria.join(' | ')}\nEvidence: ${requirement.evidenceIds.join(', ') || 'none'}`),
+  ])
   if (artifact === 'PRD') return [
     `Executive summary (editable): ${summary}`,
     `Repository: ${project.project.fullName}. ${project.project.description || 'No repository description provided.'}`,
@@ -132,10 +141,21 @@ export default function Home() {
   const [drafts, setDrafts] = useState(emptyDrafts)
   const [storageReady, setStorageReady] = useState(false)
   const howRef = useRef<HTMLElement>(null)
+  const [prdDocument, setPrdDocument] = useState<PRDDocument | null>(null)
+  const [prdRevisions, setPrdRevisions] = useState<PRDRevision[]>([])
+  const [prdDirty, setPrdDirty] = useState(false)
+  const [prdEditedSections, setPrdEditedSections] = useState<Record<string, boolean>>({})
+  const [prdGenerating, setPrdGenerating] = useState<'all' | PRDSectionId | null>(null)
+  const [prdStatus, setPrdStatus] = useState('')
+  const [prdError, setPrdError] = useState('')
+  const [prdSavedAt, setPrdSavedAt] = useState('')
+  const [prdProjectKey, setPrdProjectKey] = useState('')
+  const [prdStale, setPrdStale] = useState(false)
   const questions = useMemo(() => followUps(project?.interviewSeeds || [], questionVersion), [project, questionVersion])
   const projectName = project?.project.name || 'No repository imported'
-  const busy = analyzing || exporting
+  const busy = analyzing || exporting || prdGenerating !== null
   const isCanvasArtifact = activeArtifact === 'Flowchart' || activeArtifact === 'System Design'
+  const currentProjectKey = project ? `${project.project.fullName}@${project.analysis.analyzedAt}` : ''
 
   function openWorkspace() {
     setActiveArtifact('Overview')
@@ -156,12 +176,28 @@ export default function Home() {
     try {
       const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
       if (raw) {
-        const saved = JSON.parse(raw) as { repo?: unknown; project?: unknown; summary?: unknown }
+        const saved = JSON.parse(raw) as { repo?: unknown; project?: unknown; summary?: unknown; prdDocument?: unknown; prdRevisions?: unknown; prdSavedAt?: unknown; prdProjectKey?: unknown; prdStale?: unknown }
         if (isProjectModel(saved.project)) {
           setProject(saved.project)
           setRepo(typeof saved.repo === 'string' ? saved.repo : '')
           setSummary(typeof saved.summary === 'string' ? saved.summary : '')
           setAnalysisStatus('Restored the previous repository analysis.')
+          if (saved.prdDocument) {
+            try { setPrdDocument(normalizePrdDocument(saved.prdDocument)) } catch { setPrdDocument(null) }
+          }
+          if (Array.isArray(saved.prdRevisions)) {
+            setPrdRevisions(saved.prdRevisions.flatMap(item => {
+              if (!item || typeof item !== 'object') return []
+              const revision = item as { document?: unknown; savedAt?: unknown }
+              if (typeof revision.savedAt !== 'string' || !revision.document) return []
+              try { return [{ document: normalizePrdDocument(revision.document), savedAt: revision.savedAt }] } catch { return [] }
+            }).slice(0, 10))
+          }
+          const restoredProjectKey = `${saved.project.project.fullName}@${saved.project.analysis.analyzedAt}`
+          setPrdSavedAt(typeof saved.prdSavedAt === 'string' ? saved.prdSavedAt : '')
+          const restoredPrdProjectKey = typeof saved.prdProjectKey === 'string' ? saved.prdProjectKey : restoredProjectKey
+          setPrdProjectKey(restoredPrdProjectKey)
+          setPrdStale(saved.prdStale === true || restoredPrdProjectKey !== restoredProjectKey)
         }
       }
     } catch {
@@ -178,11 +214,97 @@ export default function Home() {
       return
     }
     try {
-      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ repo, project, summary }))
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({
+        repo, project, summary, prdDocument, prdRevisions: prdRevisions.slice(0, 10), prdSavedAt,
+        prdProjectKey, prdStale,
+      }))
     } catch {
       // A full localStorage quota should not prevent the analyzed workspace from being used.
     }
-  }, [project, repo, summary, storageReady])
+  }, [project, repo, summary, prdDocument, prdRevisions, prdSavedAt, prdProjectKey, prdStale, storageReady])
+
+  async function generatePrd(sectionId?: PRDSectionId, userContext = ''): Promise<boolean> {
+    if (!project || prdGenerating) return false
+    if (sectionId && prdStale) {
+      setPrdError('This document belongs to an older repository analysis. Generate a new document before regenerating an individual section.')
+      return false
+    }
+    setPrdGenerating(sectionId || 'all')
+    setPrdError('')
+    setPrdStatus(sectionId ? `Preparing fresh evidence for ${sectionId}…` : 'Preparing bounded repository evidence…')
+    try {
+      const existingDocument = prdDocument && !prdStale ? normalizePrdDocument(prdDocument) : undefined
+      const body: Record<string, unknown> = { project, userContext: userContext.slice(0, 4000) }
+      if (existingDocument) body.document = existingDocument
+      if (sectionId) body.sectionId = sectionId
+      setPrdStatus(sectionId ? `Gemini is regenerating ${sectionId}…` : 'Gemini is drafting the structured PRD…')
+      const response = await fetch('/api/prd/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      const payload = await response.json() as PRDDocument | { error?: { message?: string } }
+      if (!response.ok) throw new Error('error' in payload ? payload.error?.message || 'PRD generation failed.' : 'PRD generation failed.')
+      const next = payload as PRDDocument
+      const now = new Date().toISOString()
+      setPrdDocument(next)
+      setPrdProjectKey(currentProjectKey)
+      setPrdStale(false)
+      setPrdDirty(false)
+      setPrdEditedSections({})
+      setPrdSavedAt(now)
+      setPrdRevisions(current => [{ document: next, savedAt: now }, ...current.filter(item => item.document.version.number !== next.version.number)].slice(0, 10))
+      setPrdStatus(sectionId ? `${sectionId} regenerated with Gemini and saved locally.` : 'PRD generated with Gemini and saved locally.')
+      return true
+    } catch (error) {
+      setPrdError(error instanceof Error ? error.message : 'PRD generation failed.')
+      setPrdStatus('')
+      return false
+    } finally {
+      setPrdGenerating(null)
+    }
+  }
+
+  function updatePrdDocument(next: PRDDocument, sectionId: PRDSectionId) {
+    setPrdDocument(next)
+    setPrdDirty(true)
+    setPrdEditedSections(current => ({ ...current, [sectionId]: true }))
+    setPrdStatus('Draft changed locally. Save when you are ready.')
+  }
+
+  function savePrd() {
+    if (!prdDocument) return
+    let currentDocument: PRDDocument
+    try {
+      currentDocument = normalizePrdDocument(prdDocument)
+    } catch (error) {
+      setPrdError(error instanceof Error ? `Cannot save this draft: ${error.message}` : 'Cannot save this draft until all fields are complete.')
+      return
+    }
+    const now = new Date().toISOString()
+    const saved: PRDDocument = {
+      ...currentDocument,
+      version: {
+        ...currentDocument.version,
+        number: prdDocument.version.number + 1,
+        label: 'Saved draft',
+        createdAt: now,
+        changeSummary: 'Manual edits saved.',
+      },
+    }
+    setPrdDocument(saved)
+    setPrdRevisions(current => [{ document: saved, savedAt: now }, ...current].slice(0, 10))
+    setPrdDirty(false)
+    setPrdEditedSections({})
+    setPrdSavedAt(now)
+    setPrdStatus('Draft saved locally. It will be restored after refresh.')
+  }
+
+  function restorePrdRevision(revision: PRDRevision) {
+    setPrdDocument(revision.document)
+    setPrdDirty(false)
+    setPrdEditedSections({})
+    setPrdSavedAt(revision.savedAt)
+    setPrdStatus(`Restored PRD version ${revision.document.version.number}.`)
+  }
 
   async function analyzeRepository() {
     if (busy || controller.current) return
@@ -213,6 +335,10 @@ export default function Home() {
       setExportError('')
       setExportStatus('')
       setActiveArtifact('Overview')
+      setPrdProjectKey(`${next.project.fullName}@${next.analysis.analyzedAt}`)
+      setPrdStale(Boolean(prdDocument))
+      setPrdStatus(prdDocument ? 'Repository refreshed. Existing PRD preserved as a potentially stale draft.' : '')
+      setPrdError('')
       setAnalysisStatus(`Imported ${next.project.fullName}.`)
     } catch (error) {
       if (request.signal.aborted) setAnalysisStatus('Import cancelled. Existing analysis retained.')
@@ -231,7 +357,7 @@ export default function Home() {
     const matches = evidence.filter(item => terms.some(term =>
       `${item.path || ''} ${item.description} ${item.quote || ''}`.toLowerCase().includes(term)))
     const text = /^(summary|summarize|overview)\b/i.test(question)
-      ? artifactText(project, activeArtifact, summary, questions).slice(0, 8).join('\n')
+      ? artifactText(project, activeArtifact, summary, questions, prdDocument).slice(0, 8).join('\n')
       : matches.length
         ? `Matching ${activeArtifact} evidence (keyword lookup, not an inferred answer):\n${matches.slice(0, 5).map(item =>
           `${item.path || item.id}${item.line ? `:${item.line}` : ''}: ${item.description}${item.quote ? ` — ${item.quote}` : ''}`).join('\n')}`
@@ -251,7 +377,7 @@ export default function Home() {
     const artifact = {
       projectName, title: activeArtifact,
       headings: [{ text: activeArtifact, level: 1 }],
-      paragraphs: artifactText(project, activeArtifact, summary, questions),
+      paragraphs: artifactText(project, activeArtifact, summary, questions, prdDocument),
       bullets: ['Static analysis only; repository code was not executed.', ...project.analysis.warnings,
         ...evidenceFor(project, activeArtifact).map(item => `${item.id}: ${item.path || 'metadata'}${item.line ? `:${item.line}` : ''} — ${item.description}`)],
     }
@@ -442,23 +568,22 @@ export default function Home() {
           <div hidden={activeArtifact !== 'System Design'}>
             <RepositoryGraph key={project?.analysis.analyzedAt || 'empty'} project={project} mode="system" />
           </div>
-          {activeArtifact === 'PRD' && <section className="artifact-panel document-view">
-            <article className="prd-document">
-              <div className="doc-kicker">REPOSITORY PRODUCT BRIEF · DRAFT</div>
-              <h3>{projectName}</h3>
-              {!project ? <p>Import a repository to create a source-grounded draft.</p> : <>
-                <p className="evidence-note">Static implementation evidence does not establish product requirements or user intent. Confirm requirements with maintainers.</p>
-                <label htmlFor="prd-summary"><h4>Executive summary (editable draft)</h4></label>
-                <textarea id="prd-summary" rows={4} value={summary} onChange={event => setSummary(event.target.value)} />
-                <h4>Detected technologies</h4>
-                <p>{project.technologies.map(item => item.name).join(', ') || 'No technologies detected.'}</p>
-                <h4>Implementation inventory</h4>
-                <ul>{project.files.map(file => <li key={file.path}>{file.role}: {file.path}</li>)}</ul>
-                <h4>Source evidence</h4>
-                <ul>{project.evidence.map(item => <li key={item.id}>{item.path || item.id}: {item.description}</li>)}</ul>
-              </>}
-            </article>
-          </section>}
+          {activeArtifact === 'PRD' && <PrdWorkspace
+            project={project}
+            document={prdDocument}
+            revisions={prdRevisions}
+            dirty={prdDirty}
+            editedSections={prdEditedSections}
+            generating={prdGenerating}
+            status={prdStatus}
+            error={prdError}
+            savedAt={prdSavedAt}
+            stale={prdStale}
+            onGenerate={generatePrd}
+            onDocumentChange={updatePrdDocument}
+            onSave={savePrd}
+            onRestore={restorePrdRevision}
+          />}
           {activeArtifact === 'Interview Questions' && <section className="artifact-panel questions-view">
             <div className="panel-head">
               <div><h3>Interview practice set</h3><p>Repository seeds with deterministic follow-up templates.</p></div>

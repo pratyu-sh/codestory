@@ -10,6 +10,7 @@ CodeAtlas turns a public GitHub repository or local project into an evidence-awa
 - Shared project model with technologies, evidence, flow steps, system-design nodes, and interview seeds.
 - Artifact-scoped chat with source references and out-of-scope handling.
 - Locally persisted workspace restoration after a page refresh.
+- Gemini-backed structured PRD generation with evidence IDs, section editing, regeneration, version history, and local persistence.
 - Genuine PDF, DOCX, and PPTX exports.
 - Local CLI analysis for repositories that should not be pushed to GitHub.
 
@@ -23,6 +24,15 @@ npm run dev
 ```
 
 Open `http://localhost:3000`, enter a public GitHub URL, and choose **Analyze repository**.
+
+To enable the PRD workspace, copy `.env.example` to `.env.local` and set a server-only Gemini key:
+
+```bash
+GEMINI_API_KEY=your-server-side-key
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+The key is used only by `app/api/prd/generate/route.ts`; it is never sent to the browser. Without it, repository analysis and the non-AI artifacts continue to work, while PRD generation shows a configuration error.
 
 Production checks:
 
@@ -77,11 +87,12 @@ GitHub REST API / local filesystem
           export engine
 ```
 
-The web route is `app/api/analyze/route.ts`; the export route is `app/api/export/route.ts`. Shared analysis code lives in `lib/analysis`, and document generation lives in `lib/exports`.
+The web routes are `app/api/analyze/route.ts`, `app/api/prd/generate/route.ts`, and `app/api/export/route.ts`. Shared analysis code lives in `lib/analysis`, structured PRD generation lives in `lib/prd`, and document generation lives in `lib/exports`.
 
 ## Known limitations
 
 - GitHub ingestion is public-repository-only and unauthenticated.
+- Gemini PRD generation requires `GEMINI_API_KEY`; generated documents are stored in browser local storage in this MVP rather than a server database.
 - Relationships inferred from paths and roles are explicitly marked and are not runtime call graphs.
 - Local analysis currently provides a lighter path-and-language model than GitHub analysis.
 - Diagram exports include a structured summary rather than a rendered interactive canvas.
