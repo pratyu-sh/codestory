@@ -509,7 +509,7 @@ export default function Home() {
           </details>
         </header>
         <div className={`content${isCanvasArtifact ? ' canvas-artifact-content' : ''}`}>
-          {!isCanvasArtifact && <>
+          {!isCanvasArtifact && activeArtifact !== 'PRD' && <>
           <div className="hero-row">
             <div>
               <div className="eyebrow">{analyzing ? 'ANALYZING REPOSITORY' : project ? 'REPOSITORY ANALYSIS' : 'START WITH A REPOSITORY'}</div>
