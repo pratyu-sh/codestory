@@ -11,6 +11,7 @@ CodeAtlas turns a public GitHub repository or local project into an evidence-awa
 - Artifact-scoped chat with source references and out-of-scope handling.
 - Locally persisted workspace restoration after a page refresh.
 - Gemini-backed structured PRD generation with evidence IDs, section editing, regeneration, version history, and local persistence.
+- Evidence-driven flowchart modes for user journeys, technical execution, and page maps, with animated playback and optional Gemini explanations.
 - Genuine PDF, DOCX, and PPTX exports.
 - Local CLI analysis for repositories that should not be pushed to GitHub.
 
@@ -89,7 +90,7 @@ GitHub REST API / local filesystem
           export engine
 ```
 
-The web routes are `app/api/analyze/route.ts`, `app/api/prd/generate/route.ts`, and `app/api/export/route.ts`. Shared analysis code lives in `lib/analysis`, structured PRD generation lives in `lib/prd`, and document generation lives in `lib/exports`.
+The web routes are `app/api/analyze/route.ts`, `app/api/prd/generate/route.ts`, `app/api/flow/explain/route.ts`, and `app/api/export/route.ts`. Shared analysis code lives in `lib/analysis`, structured PRD generation lives in `lib/prd`, repository flow derivation lives in `lib/flow`, and document generation lives in `lib/exports`.
 
 ## Known limitations
 

@@ -8,10 +8,12 @@
     "start": "next start",
     "cli": "tsx cli/codeatlas.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/smoke.ts && tsx tests/prd.ts",
+    "test": "tsx tests/smoke.ts && tsx tests/prd.ts && tsx tests/flow.ts",
     "test:prd": "tsx tests/prd.ts"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
+    "@xyflow/react": "^12.12.0",
     "docx": "^9.13.0",
     "next": "14.2.15",
     "pdf-lib": "^1.17.1",
@@ -20,10 +22,11 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@types/dagre": "^0.7.54",
     "@types/node": "20.17.24",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
-    "typescript": "5.8.2",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "typescript": "5.8.2"
   }
 }
