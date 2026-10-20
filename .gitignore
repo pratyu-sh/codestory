@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+dev.log
+dev-*.log
+build-output.txt
+dev-server-error.log
+prod-*.log
+browser-test.log
+*.tsbuildinfo
+.env*
+!.env.example
+.opencode/omnirush/
