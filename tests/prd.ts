@@ -62,8 +62,27 @@ function makeSection(id: (typeof PRD_SECTION_DEFINITIONS)[number]['id'], summary
     status: 'unknown' as const,
     summary,
     content: [`Content for ${id}`],
-    requirements: [],
-    evidenceIds: id === 'overview' ? [evidenceId] : [],
+    requirements: id === 'functional-requirements' ? [
+      {
+        id: 'FR-001',
+        text: 'The user can submit a repository for analysis.',
+        actor: 'Authorized user',
+        preconditions: ['The repository URL is public and valid.'],
+        trigger: 'The user submits the repository URL.',
+        expectedBehavior: ['The system validates and analyzes the repository.'],
+        inputs: ['Repository URL'],
+        outputs: ['Project analysis'],
+        businessRules: ['Repository source is treated as untrusted data.'],
+        errorConditions: ['The repository cannot be reached.'],
+        relatedDependencies: ['GitHub REST API'],
+        status: 'supported' as const,
+        priority: 'must' as const,
+        acceptanceCriteria: ['A valid URL returns an evidence-backed analysis.'],
+        evidenceIds: [evidenceId],
+        rationale: 'The repository is the source for every downstream artifact.',
+      },
+    ] : [],
+    evidenceIds: id === 'document-overview' ? [evidenceId] : [],
     references: [],
   }
 }
@@ -73,7 +92,7 @@ function makeDocument(): PRDDocument {
     schemaVersion: '1.0',
     title: 'Example PRD',
     projectName: 'Example project',
-    status: 'partial',
+    status: 'draft',
     version: {
       number: 1,
       label: 'v1',
@@ -100,8 +119,9 @@ async function main() {
   const valid = makeDocument()
   const normalized = normalizePrdDocument({ ...valid, title: '  Example PRD  ' })
   assert.equal(normalized.title, 'Example PRD')
-  assert.equal(normalized.sections.length, PRD_SECTION_DEFINITIONS.length)
-  assert.deepEqual(normalized.sections.map(section => section.id), PRD_SECTION_DEFINITIONS.map(section => section.id))
+   assert.equal(normalized.sections.length, PRD_SECTION_DEFINITIONS.length)
+   assert.deepEqual(normalized.sections.map(section => section.id), PRD_SECTION_DEFINITIONS.map(section => section.id))
+   assert.equal(normalized.sections.find(section => section.id === 'functional-requirements')?.requirements[0]?.actor, 'Authorized user')
 
   assertValidationFailure({ ...valid, schemaVersion: '2.0' }, 'rejects unsupported schema versions')
   assertValidationFailure({
@@ -117,7 +137,7 @@ async function main() {
 
   const project = makeProject()
   const regeneratedSection = {
-    ...makeSection('goals', 'Regenerated goals summary'),
+    ...makeSection('goals-and-non-goals', 'Regenerated goals summary'),
     title: 'Regenerated goals',
     status: 'complete' as const,
     content: ['Updated goals content'],
@@ -133,7 +153,7 @@ async function main() {
 
   const result = await generatePrd(project, {
     document: valid,
-    sectionId: 'goals',
+    sectionId: 'goals-and-non-goals',
     userContext: 'Focus on the product goals.',
   }, {
     apiKey: 'test-only-key',
@@ -146,13 +166,13 @@ async function main() {
   assert.equal(requests[0].init.method, 'POST')
   const requestBody = JSON.parse(String(requests[0].init.body)) as { contents: Array<{ parts: Array<{ text: string }> }>; generationConfig: { responseMimeType: string } }
   assert.equal(requestBody.generationConfig.responseMimeType, 'application/json')
-  assert.match(requestBody.contents[0].parts[0].text, /Regenerate only section "goals"/)
+  assert.match(requestBody.contents[0].parts[0].text, /Regenerate only section "goals-and-non-goals"/)
 
   assert.equal(result.document.version.number, 2)
   assert.equal(result.document.version.changeSummary, 'Regenerated Regenerated goals.')
-  assert.equal(result.document.sections.find(section => section.id === 'goals')?.summary, 'Regenerated goals summary')
-  assert.equal(result.document.sections.find(section => section.id === 'goals')?.title, 'Regenerated goals')
-  assert.equal(result.document.sections.find(section => section.id === 'overview')?.summary, valid.sections[0].summary)
+  assert.equal(result.document.sections.find(section => section.id === 'goals-and-non-goals')?.summary, 'Regenerated goals summary')
+  assert.equal(result.document.sections.find(section => section.id === 'goals-and-non-goals')?.title, 'Regenerated goals')
+   assert.equal(result.document.sections.find(section => section.id === 'document-overview')?.summary, valid.sections[0].summary)
   assert.equal(result.document.sections.length, PRD_SECTION_DEFINITIONS.length)
 
   console.log('PRD checks passed: document validation and mocked section regeneration.')

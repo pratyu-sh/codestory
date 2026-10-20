@@ -22,24 +22,47 @@ interface GeminiResponse {
   candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }>
 }
 
-const documentResponseSchema = {
+const referenceResponseSchema = {
+  type: 'OBJECT',
+  properties: { id: { type: 'STRING' }, kind: { type: 'STRING' }, label: { type: 'STRING' }, target: { type: 'STRING' }, url: { type: 'STRING' } },
+  required: ['id', 'kind', 'label', 'target'],
+} as const
+
+const evidenceResponseSchema = {
+  type: 'OBJECT',
+  properties: { id: { type: 'STRING' }, kind: { type: 'STRING' }, source: { type: 'STRING' }, description: { type: 'STRING' }, quote: { type: 'STRING' }, line: { type: 'INTEGER' }, confidence: { type: 'STRING' } },
+  required: ['id', 'kind', 'source', 'description', 'confidence'],
+} as const
+
+const requirementResponseSchema = {
   type: 'OBJECT',
   properties: {
-    schemaVersion: { type: 'STRING' }, title: { type: 'STRING' }, projectName: { type: 'STRING' }, status: { type: 'STRING' },
-    version: { type: 'OBJECT', properties: { number: { type: 'INTEGER' }, label: { type: 'STRING' }, createdAt: { type: 'STRING' }, changeSummary: { type: 'STRING' } }, required: ['number', 'label', 'createdAt', 'changeSummary'] },
-    sections: { type: 'ARRAY', items: { type: 'OBJECT' } }, evidence: { type: 'ARRAY', items: { type: 'OBJECT' } }, references: { type: 'ARRAY', items: { type: 'OBJECT' } },
+    id: { type: 'STRING' }, text: { type: 'STRING' }, actor: { type: 'STRING' }, preconditions: { type: 'ARRAY', items: { type: 'STRING' } }, trigger: { type: 'STRING' },
+    expectedBehavior: { type: 'ARRAY', items: { type: 'STRING' } }, inputs: { type: 'ARRAY', items: { type: 'STRING' } }, outputs: { type: 'ARRAY', items: { type: 'STRING' } },
+    businessRules: { type: 'ARRAY', items: { type: 'STRING' } }, errorConditions: { type: 'ARRAY', items: { type: 'STRING' } }, relatedDependencies: { type: 'ARRAY', items: { type: 'STRING' } },
+    status: { type: 'STRING' }, priority: { type: 'STRING' }, acceptanceCriteria: { type: 'ARRAY', items: { type: 'STRING' } }, evidenceIds: { type: 'ARRAY', items: { type: 'STRING' } }, rationale: { type: 'STRING' },
   },
-  required: ['schemaVersion', 'title', 'projectName', 'status', 'version', 'sections', 'evidence', 'references'],
+  required: ['id', 'text', 'actor', 'preconditions', 'trigger', 'expectedBehavior', 'inputs', 'outputs', 'businessRules', 'errorConditions', 'relatedDependencies', 'status', 'priority', 'acceptanceCriteria', 'evidenceIds', 'rationale'],
 } as const
 
 const sectionResponseSchema = {
   type: 'OBJECT',
   properties: {
     id: { type: 'STRING' }, title: { type: 'STRING' }, status: { type: 'STRING' }, summary: { type: 'STRING' },
-    content: { type: 'ARRAY', items: { type: 'STRING' } }, requirements: { type: 'ARRAY', items: { type: 'OBJECT' } },
-    evidenceIds: { type: 'ARRAY', items: { type: 'STRING' } }, references: { type: 'ARRAY', items: { type: 'OBJECT' } },
+    content: { type: 'ARRAY', items: { type: 'STRING' } }, requirements: { type: 'ARRAY', items: requirementResponseSchema },
+    evidenceIds: { type: 'ARRAY', items: { type: 'STRING' } }, references: { type: 'ARRAY', items: referenceResponseSchema },
   },
   required: ['id', 'title', 'status', 'summary', 'content', 'requirements', 'evidenceIds', 'references'],
+} as const
+
+const documentResponseSchema = {
+  type: 'OBJECT',
+  properties: {
+    schemaVersion: { type: 'STRING' }, title: { type: 'STRING' }, projectName: { type: 'STRING' }, status: { type: 'STRING' },
+    version: { type: 'OBJECT', properties: { number: { type: 'INTEGER' }, label: { type: 'STRING' }, createdAt: { type: 'STRING' }, changeSummary: { type: 'STRING' } }, required: ['number', 'label', 'createdAt', 'changeSummary'] },
+    sections: { type: 'ARRAY', items: sectionResponseSchema }, evidence: { type: 'ARRAY', items: evidenceResponseSchema }, references: { type: 'ARRAY', items: referenceResponseSchema },
+  },
+  required: ['schemaVersion', 'title', 'projectName', 'status', 'version', 'sections', 'evidence', 'references'],
 } as const
 
 function extractJson(response: GeminiResponse): unknown {

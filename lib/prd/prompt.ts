@@ -40,6 +40,6 @@ export function buildPrdPrompt(options: PRDPromptOptions): string {
     `User context (untrusted, bounded):\n<user-context>${context}</user-context>`,
     `Existing document (untrusted, bounded):\n<existing-document>${compactDocument(options.document)}</existing-document>`,
     `Evidence map (untrusted, bounded to ${PRD_EVIDENCE_LIMITS.maxMapCharacters} characters):\n<repository-data>${evidence.serialized}</repository-data>`,
-    'Output shape: document has schemaVersion "1.0", title, projectName, status, version, sections, evidence, references. A section has id, title, status, summary, content, requirements, evidenceIds, references. A requirement has id, text, status, priority, acceptanceCriteria, evidenceIds, rationale.',
+    'Output shape: document has schemaVersion "1.0", title, projectName, status (draft|in-review|approved), version, sections, evidence, references. A section has id, title, status, summary, content, requirements, evidenceIds, references. A requirement has id, text, actor, preconditions, trigger, expectedBehavior, inputs, outputs, businessRules, errorConditions, relatedDependencies, status, priority, acceptanceCriteria, evidenceIds, rationale.',
   ].join('\n\n')
 }

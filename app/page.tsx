@@ -69,7 +69,7 @@ function artifactText(project: ProjectModel, artifact: Artifact, summary: string
     `## ${section.title} · ${section.status}`,
     section.summary,
     ...section.content,
-    ...section.requirements.map(requirement => `${requirement.id} [${requirement.status}/${requirement.priority}]: ${requirement.text}\nAcceptance: ${requirement.acceptanceCriteria.join(' | ')}\nEvidence: ${requirement.evidenceIds.join(', ') || 'none'}`),
+    ...section.requirements.map(requirement => `${requirement.id} [${requirement.status}/${requirement.priority}]: ${requirement.text}\nActor: ${requirement.actor}\nPreconditions: ${requirement.preconditions.join(' | ')}\nTrigger: ${requirement.trigger}\nExpected behavior: ${requirement.expectedBehavior.join(' | ')}\nInputs: ${requirement.inputs.join(' | ')}\nOutputs: ${requirement.outputs.join(' | ')}\nBusiness rules: ${requirement.businessRules.join(' | ')}\nError conditions: ${requirement.errorConditions.join(' | ')}\nRelated dependencies: ${requirement.relatedDependencies.join(' | ')}\nAcceptance: ${requirement.acceptanceCriteria.join(' | ')}\nEvidence: ${requirement.evidenceIds.join(', ') || 'none'}`),
   ])
   if (artifact === 'PRD') return [
     `Executive summary (editable): ${summary}`,
